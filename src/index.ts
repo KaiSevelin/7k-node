@@ -126,6 +126,12 @@ export const node: Provider = {
   name: "node",
   target: "TypeScript 5 / Node 20",
   layouts: ["per-declaration", "per-package", "single"],
+  /**
+   * The same three layers C# covers, for the same reason: the Contract layer as interfaces and
+   * decoders, a `service` as a handler interface, a `saga` as a state machine. Not `pipe`, which is
+   * infrastructure rather than code.
+   */
+  emits: ["enum", "value", "record", "envelope", "message", "saga", "service"],
   options: OPTIONS,
 
   generate(request: Request): Generated {
