@@ -19,7 +19,7 @@
  */
 
 import type { Decl, EmitIr, LinkedModel, ReactIr, Ref, ServiceIr } from "@sevenk/core";
-import type { Loss } from "@sevenk/generate";
+import type { Loss } from "@sevenk/provider";
 import { describePredicate } from "./emit.js";
 import { camel, pascal, qualified, type Context } from "./types.js";
 

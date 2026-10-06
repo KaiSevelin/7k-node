@@ -28,7 +28,7 @@ import type {
   Provider,
   Refusal,
   Request,
-} from "@sevenk/generate";
+} from "@sevenk/provider";
 import { RUNTIME, RUNTIME_MODULE } from "./decode.js";
 import { emitDecl, splitNeed, type Emitted } from "./emit.js";
 import { handlersFor } from "./handlers.js";

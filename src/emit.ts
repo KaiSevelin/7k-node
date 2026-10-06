@@ -8,7 +8,7 @@
  */
 
 import type { Decl, EnumIr, FieldIr, MessageIr, Predicate, RecordIr, TypeIr, ValueIr } from "@sevenk/core";
-import type { Loss } from "@sevenk/generate";
+import type { Loss } from "@sevenk/provider";
 import {
   chainOf,
   checksFor,

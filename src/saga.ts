@@ -32,7 +32,7 @@ import type {
   Terminal,
   TypeIr,
 } from "@sevenk/core";
-import type { Loss } from "@sevenk/generate";
+import type { Loss } from "@sevenk/provider";
 import { camel, pascal, qualified, tsType, type Context, type TypeProblem } from "./types.js";
 
 export interface Machine {
