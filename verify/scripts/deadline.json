@@ -1,0 +1,66 @@
+{
+  "saga": "shop.Checkout",
+  "note": "Two steps succeed and the third is still waiting when the deadline elapses, which abandons the instance from outside any step \u2014 so no step is named on the terminal.",
+  "envelope": {
+    "correlationId": "11111111-1111-1111-1111-111111111111",
+    "priority": 3
+  },
+  "envelopeArgs": [
+    {
+      "correlationId": "11111111-1111-1111-1111-111111111111",
+      "priority": 3
+    }
+  ],
+  "start": {
+    "type": "shop.PlaceOrder",
+    "body": {
+      "orderId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+      "items": [
+        {
+          "sku": "SKU-1",
+          "qty": 2,
+          "unit": {
+            "value": "12.50",
+            "currency": "SEK"
+          }
+        }
+      ],
+      "total": {
+        "value": "25.00",
+        "currency": "SEK"
+      },
+      "tags": [
+        "red"
+      ],
+      "rates": {
+        "NOK": "1.05"
+      },
+      "status": "Open",
+      "token": "AQID",
+      "stamped": "2026-10-06T14:22:05.123456Z",
+      "held": "PT30S",
+      "day": "2026-10-06",
+      "settleIn": "SEK",
+      "weight": 1.5,
+      "count": 1
+    }
+  },
+  "inputs": [
+    {
+      "deliver": "shop.Charged",
+      "body": {
+        "orderId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+        "authId": "44444444-4444-4444-4444-444444444444"
+      }
+    },
+    {
+      "deliver": "shop.Noted",
+      "body": {
+        "orderId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"
+      }
+    },
+    {
+      "advance": 50000
+    }
+  ]
+}

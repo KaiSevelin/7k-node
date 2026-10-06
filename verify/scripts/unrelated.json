@@ -1,0 +1,64 @@
+{
+  "saga": "shop.Checkout",
+  "note": "A reply for another instance's key, which must not advance this one.",
+  "envelope": {
+    "correlationId": "11111111-1111-1111-1111-111111111111",
+    "priority": 3
+  },
+  "envelopeArgs": [
+    {
+      "correlationId": "11111111-1111-1111-1111-111111111111",
+      "priority": 3
+    }
+  ],
+  "start": {
+    "type": "shop.PlaceOrder",
+    "body": {
+      "orderId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+      "items": [
+        {
+          "sku": "SKU-1",
+          "qty": 2,
+          "unit": {
+            "value": "12.50",
+            "currency": "SEK"
+          }
+        }
+      ],
+      "total": {
+        "value": "25.00",
+        "currency": "SEK"
+      },
+      "tags": [
+        "red"
+      ],
+      "rates": {
+        "NOK": "1.05"
+      },
+      "status": "Open",
+      "token": "AQID",
+      "stamped": "2026-10-06T14:22:05.123456Z",
+      "held": "PT30S",
+      "day": "2026-10-06",
+      "settleIn": "SEK",
+      "weight": 1.5,
+      "count": 1
+    }
+  },
+  "inputs": [
+    {
+      "deliver": "shop.Charged",
+      "body": {
+        "orderId": "99999999-9999-9999-9999-999999999999",
+        "authId": "55555555-5555-5555-5555-555555555555"
+      }
+    },
+    {
+      "deliver": "shop.Charged",
+      "body": {
+        "orderId": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+        "authId": "66666666-6666-6666-6666-666666666666"
+      }
+    }
+  ]
+}

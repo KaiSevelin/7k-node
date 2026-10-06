@@ -1,0 +1,56 @@
+{
+  "saga": "shop.Checkout",
+  "note": "The first step refuses, so nothing completed and nothing is reversed \u2014 the asymmetry a saga test exists for.",
+  "envelope": {
+    "correlationId": "11111111-1111-1111-1111-111111111111",
+    "priority": 3
+  },
+  "envelopeArgs": [
+    {
+      "correlationId": "11111111-1111-1111-1111-111111111111",
+      "priority": 3
+    }
+  ],
+  "start": {
+    "type": "shop.PlaceOrder",
+    "body": {
+      "orderId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+      "items": [
+        {
+          "sku": "SKU-1",
+          "qty": 2,
+          "unit": {
+            "value": "12.50",
+            "currency": "SEK"
+          }
+        }
+      ],
+      "total": {
+        "value": "25.00",
+        "currency": "SEK"
+      },
+      "tags": [
+        "red"
+      ],
+      "rates": {
+        "NOK": "1.05"
+      },
+      "status": "Open",
+      "token": "AQID",
+      "stamped": "2026-10-06T14:22:05.123456Z",
+      "held": "PT30S",
+      "day": "2026-10-06",
+      "settleIn": "SEK",
+      "weight": 1.5,
+      "count": 1
+    }
+  },
+  "inputs": [
+    {
+      "deliver": "shop.Declined",
+      "body": {
+        "orderId": "cccccccc-cccc-cccc-cccc-cccccccccccc"
+      }
+    }
+  ]
+}

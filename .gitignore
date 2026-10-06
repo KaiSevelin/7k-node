@@ -1,0 +1,8 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+*.log
+
+# Where `npm run verify` compiles and runs the generated TypeScript.
+.verify/

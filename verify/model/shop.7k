@@ -1,0 +1,140 @@
+// A model for `npm run verify`: every data shape this provider claims to decode, in a form the real
+// TypeScript compiler can be pointed at and Node can be made to run.
+
+package shop
+
+envelopes Trace
+
+enum Status {
+  Open
+  Shipped
+}
+
+value Line     : string { length 1..255 }
+value Line60   : Line   { length 1..60 }
+value Sku      : string { length 1..24; normalize upper }
+value Money    : decimal(18,2) { range 0.. }
+value Currency : string { length 3; pattern /^[A-Z]{3}$/ }
+value Qty      : int    { range 1..99 }
+value Payload  : bytes  { length 1..64 }
+// A range past 2^53, where a JavaScript `number` stops being exact.
+value Big      : int    { range 0..90071992547409920 }
+
+record Amount {
+  value:    Money
+  currency: Currency
+}
+
+record Named {
+  name: Line60
+}
+
+record Item {
+  include Named
+  sku:  Sku
+  qty:  Qty
+  unit: Amount
+}
+
+envelope Trace {
+  correlationId: uuid @role(correlation)
+  priority:      int  { range 0..9 }
+}
+
+message PlaceOrder v1.0 @command {
+  orderId:  uuid @role(businessKey)
+  items:    [Item] { size 1..50 }
+  total:    Amount
+  tags:     [Line60] { size 0..10; unique }
+  rates:    map<Currency, Money>
+  status:   Status
+  note:     Line60?
+  token:    Payload
+  stamped:  instant
+  held:     duration
+  day:      date
+  settleIn: Currency
+  weight:   float
+  count:    Big
+
+  invariant total.currency == settleIn
+  invariant total.currency == items[].unit.currency
+}
+
+pipe inbound : queue { delivery at-least-once }
+
+message Charge   v1.0 @command { orderId: uuid @role(businessKey); amount: Amount }
+message Charged  v1.0 @event   { orderId: uuid @role(businessKey); authId: uuid }
+message Declined v1.0 @event   { orderId: uuid @role(businessKey) }
+message Refund   v1.0 @command { orderId: uuid @role(businessKey); authId: uuid; amount: Amount }
+message Ship     v1.0 @command { orderId: uuid @role(businessKey) }
+message Shipped  v1.0 @event   { orderId: uuid @role(businessKey) }
+message Notify   v1.0 @command { orderId: uuid @role(businessKey) }
+message Noted    v1.0 @event   { orderId: uuid @role(businessKey) }
+message Done     v1.0 @event   { orderId: uuid @role(businessKey) }
+message Failed   v1.0 @event   { orderId: uuid @role(businessKey); detail: Line60 }
+
+service Desk {
+  emits Charge  to inbound
+  emits Refund  to inbound
+  emits Notify  to inbound
+  emits Ship    to inbound
+  emits Done    to inbound
+  emits Failed  to inbound
+
+  reacts PlaceOrder from inbound {
+    replies Done | Failed
+    retry   5 after 1s max 30s
+  }
+
+  reacts Charged from inbound { replies none }
+
+  reacts Shipped from inbound { replies none }
+
+  reacts Noted from inbound { replies none }
+}
+
+// Three steps, so compensation has all three of its cases in one trace.
+saga Checkout v1.0 {
+
+  start on PlaceOrder keyed by orderId {
+    total = message.total
+  }
+
+  state {
+    total:  Amount
+    authId: uuid
+  }
+
+  step charge {
+    send Charge { amount = state.total }
+
+    on Charged { authId = message.authId }
+    on Declined    reject "declined"
+    on timeout 30s reject "charge timed out"
+
+    undo with Refund { authId = state.authId; amount = state.total }
+  }
+
+  step notify {
+    send Notify
+
+    on Noted
+    on timeout 10s reject "notification timed out"
+
+    undo none
+  }
+
+  step deliver {
+    send Ship
+
+    on Shipped
+    on timeout 2m reject "delivery timed out"
+  }
+
+  on deadline 45s abandon
+
+  on complete send Done
+  on reject   send Failed { detail = terminal.reason }
+  on abandon  send Failed { detail = terminal.reason }
+}

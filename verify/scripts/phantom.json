@@ -1,0 +1,67 @@
+{
+  "saga": "shop.Checkout",
+  "note": "A host that cannot cancel timers: a timer a joined step armed fires late, and the guard has to make it harmless.",
+  "envelope": {
+    "correlationId": "11111111-1111-1111-1111-111111111111",
+    "priority": 3
+  },
+  "envelopeArgs": [
+    {
+      "correlationId": "11111111-1111-1111-1111-111111111111",
+      "priority": 3
+    }
+  ],
+  "start": {
+    "type": "shop.PlaceOrder",
+    "body": {
+      "orderId": "00000000-0000-0000-0000-000000000000",
+      "items": [
+        {
+          "sku": "SKU-1",
+          "qty": 2,
+          "unit": {
+            "value": "12.50",
+            "currency": "SEK"
+          }
+        }
+      ],
+      "total": {
+        "value": "25.00",
+        "currency": "SEK"
+      },
+      "tags": [
+        "red"
+      ],
+      "rates": {
+        "NOK": "1.05"
+      },
+      "status": "Open",
+      "token": "AQID",
+      "stamped": "2026-10-06T14:22:05.123456Z",
+      "held": "PT30S",
+      "day": "2026-10-06",
+      "settleIn": "SEK",
+      "weight": 1.5,
+      "count": 1
+    }
+  },
+  "inputs": [
+    {
+      "deliver": "shop.Charged",
+      "body": {
+        "orderId": "00000000-0000-0000-0000-000000000000",
+        "authId": "77777777-7777-7777-7777-777777777777"
+      }
+    },
+    {
+      "advance": 40000
+    },
+    {
+      "deliver": "shop.Noted",
+      "body": {
+        "orderId": "00000000-0000-0000-0000-000000000000"
+      }
+    }
+  ],
+  "uncancellableTimers": true
+}
