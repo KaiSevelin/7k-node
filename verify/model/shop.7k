@@ -99,6 +99,22 @@ service Desk {
   reacts Noted from inbound { replies none }
 }
 
+// Something has to send the first message: a scenario publishes as a service the model says emits it.
+// `@external` because it is not ours and nothing is generated for it.
+service Front @external {
+  emits PlaceOrder to inbound
+}
+
+// One subscription with one declared reply, which is the third shape a dev host dispatches: the
+// method returns the reply directly rather than an outcome union, and `replies none` returns nothing.
+service Warehouse {
+  emits Shipped to inbound
+
+  reacts Ship from inbound {
+    replies Shipped
+  }
+}
+
 // Three steps, so compensation has all three of its cases in one trace.
 saga Checkout v1.0 {
 

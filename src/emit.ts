@@ -182,7 +182,10 @@ function emitValue(decl: ValueIr, ctx: Context): Emitted {
         : [needed(inner!.id.pkg, pascal(inner!.id.name)), needed(inner!.id.pkg, delegate)],
     ),
     kernel,
-    runtime: new Set(["Problems", ...guard.runtime]),
+    // `Decoded` is named here rather than added to every module that imports anything from the
+    // runtime: a service module imports the handler shapes and no `Decoded`, and an import nobody
+    // uses fails `noUnusedLocals`.
+    runtime: new Set(["Decoded", "Problems", ...guard.runtime]),
     lines: [
       ...doc([
         `\`${decl.id.name}\`, a type of its own rather than the \`${base.text}\` it refines.`,
@@ -546,7 +549,7 @@ function emitRecord(decl: RecordIr | MessageIr, ctx: Context): Emitted {
     problems: [] as TypeProblem[],
     needs: new Set<string>(),
     kernel: new Set<string>(),
-    runtime: new Set<string>(["Problems", "isObject"]),
+    runtime: new Set<string>(["Decoded", "Problems", "isObject"]),
   };
 
   const fields = fieldsOf(decl, ctx);

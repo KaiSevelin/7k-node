@@ -304,6 +304,106 @@ describe("handler interfaces", () => {
   });
 });
 
+/**
+ * The development host.
+ *
+ * Whether it *works* is `verify/adapter.ts`: that one is assigned to the sandbox's own `Handler`,
+ * run inside a scenario, and shown to refuse a body that does not decode. These are about what the
+ * generator decides — which cases exist, which do not, and what it says when it cannot write one.
+ */
+describe("the development host", () => {
+  const at = () => code();
+
+  it("dispatches on the message's qualified name, which is what a delivery carries", () => {
+    const text = at();
+    expect(text).toContain("export const deskDevHost =");
+    expect(text).toContain("  (handler: Desk): SevenKHandler =>");
+    expect(text).toContain('      case "shop.PlaceOrder": {');
+  });
+
+  it("decodes every argument rather than casting one", () => {
+    // The claim the whole thing rests on. `message.body as PlaceOrder` would compile and would be a
+    // claim nobody checked, which is the one thing the decoder exists to refuse.
+    const text = at();
+    expect(text).toContain(
+      'sevenKDecoded("shop.PlaceOrder", decodePlaceOrder(message.body))',
+    );
+    // The envelope comes out of the one flattened map (D50), read tolerantly.
+    expect(text).toContain(
+      'sevenKDecoded("shop.Trace", decodeTrace(message.envelope.fields))',
+    );
+    // The decoder itself writes `as PlaceOrder` on a value it has just checked, so what must not be
+    // here is the cast of the *delivery*.
+    expect(text).not.toContain("message.body as");
+  });
+
+  it("names the reply as the model's `replies` clause spells it", () => {
+    // Not by the local type name: `kind` is this provider's, and across packages the two differ.
+    expect(at()).toContain("return { reply: named[outcome.kind], body: sevenKBody(outcome.message) };");
+  });
+
+  it("returns the one reply directly where the model declares one", () => {
+    expect(at()).toContain('return { reply: "Shipped", body: sevenKBody(outcome) };');
+  });
+
+  it("returns nothing where the model declares `replies none`", () => {
+    const text = at();
+    expect(text).toContain('      case "shop.Charged": {');
+    expect(text).toContain("        await handler.handleCharged(");
+  });
+
+  it("throws on a message the service does not react to", () => {
+    // The scenario routed it here, so it is a fault in the host rather than in the model — and
+    // returning nothing would acknowledge it.
+    expect(at()).toContain("does not react to");
+  });
+
+  it("imports the handler shapes as types, so nothing of it survives a production build", () => {
+    // Under `verbatimModuleSyntax` a type imported as a value does not compile; and an exported
+    // `const` nobody imports is what lets this be co-located instead of guarded like C#'s.
+    expect(at()).toContain("import type { Decoded, SevenKHandler, SevenKMessage, SevenKReply }");
+  });
+
+  it("writes nothing where asked", () => {
+    const text = code({ devHost: false });
+    expect(text).toContain("export interface Desk {");
+    expect(text).not.toContain("deskDevHost");
+  });
+
+  it("writes nothing without decoders, because it has nothing honest to dispatch with", () => {
+    const text = code({ decoders: false });
+    expect(text).toContain("export interface Desk {");
+    expect(text).not.toContain("deskDevHost");
+  });
+
+  /**
+   * Two subscriptions to one message, which is the one thing it cannot carry.
+   *
+   * A delivery names the message and not the subscription that matched it, so a dispatcher has
+   * nothing to tell them apart by. TypeScript will even accept two `case` labels for one value and
+   * quietly make the second unreachable, which is worse than C# refusing to compile it.
+   */
+  it("keeps the unnamed subscription and declares the other lost", () => {
+    const twice = MODEL.replace(
+      "  reacts Charged from inbound { replies none }",
+      ["  reacts Charged from inbound { replies none }", "", "  reacts Charged from inbound as sweep { replies none }"].join("\n"),
+    );
+    const out = run(model(twice));
+    const text = named(out, "model.ts");
+
+    expect(text).toContain("handleChargedAsSweep(");
+    expect(text).toContain('      case "shop.Charged": {');
+    expect(text).toContain("await handler.handleCharged(");
+    expect(text).not.toContain("await handler.handleChargedAsSweep(");
+
+    const loss = out.artifacts
+      .flatMap((a) => a.losses)
+      .find((l) => l.at === "shop.Desk as sweep");
+    expect(loss?.fidelity).toBe("none");
+    expect(loss?.detail).toContain("handleChargedAsSweep");
+  });
+});
+
 describe("the saga machine", () => {
   const at = () => code();
 

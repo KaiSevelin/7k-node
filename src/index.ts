@@ -63,6 +63,14 @@ const OPTIONS: readonly OptionSpec[] = [
     scope: "declaration",
   },
   {
+    name: "devHost",
+    describe:
+      "Write a development host beside each service interface: an adapter that runs your implementation inside a 7K Sandbox scenario, under your debugger, while everything it talks to stays mocked. It decodes what it dispatches, so it is off where `decoders` is. Unlike the C# provider's it needs no `#if DEBUG` and no file of its own — an exported `const` nobody imports is dropped by every bundler, and the types it is written against erase.",
+    type: "boolean",
+    default: true,
+    scope: "declaration",
+  },
+  {
     name: "sagas",
     describe:
       "Emit a state machine per saga. Pure: each input returns the effects the saga decided and the host performs them, which is what lets the same script drive this and the sandbox's own engine.",
@@ -99,6 +107,15 @@ const HEADER = [
 ];
 
 /** Where one declaration's module lives, and how deep it is for a relative import. */
+/** Names in the decode runtime that are types rather than values. */
+const RUNTIME_TYPES = new Set([
+  "Decoded",
+  "SevenKHandler",
+  "SevenKJson",
+  "SevenKMessage",
+  "SevenKReply",
+]);
+
 const pathFor = (decl: Decl, layout: Request["layout"]): string => {
   if (layout === "single") return "model.ts";
   if (layout === "per-package") return `${moduleOf(decl.id.pkg)}.ts`;
@@ -150,7 +167,7 @@ export const node: Provider = {
         pkgOf: decl.id.pkg,
       };
 
-      const emitted = emitFor(decl, ctx, options);
+      const emitted = emitFor(decl, ctx, options, request.optionsFor);
       if (emitted === undefined) continue;
 
       if (emitted.problems.length > 0) {
@@ -193,7 +210,7 @@ export const node: Provider = {
             needs: new Set(
               [...emitted.needs].filter((need) => {
                 const { name } = splitNeed(need);
-                return !name.endsWith("Into") && !/^is[A-Z]/.test(name);
+                return !name.endsWith("Into") && !/^(?:is|decode)[A-Z]/.test(name);
               }),
             ),
             losses: [
@@ -253,10 +270,21 @@ export const node: Provider = {
  * the losses are computed once rather than three times — the only thing that differs is what the
  * lines say.
  */
-function emitFor(decl: Decl, ctx: Context, options: Readonly<Record<string, unknown>>): Emitted | undefined {
+function emitFor(
+  decl: Decl,
+  ctx: Context,
+  options: Readonly<Record<string, unknown>>,
+  optionsFor: Request["optionsFor"],
+): Emitted | undefined {
   if (decl.kind === "service") {
     if (options["handlers"] === false) return undefined;
-    const handlers = handlersFor(decl, ctx);
+    const handlers = handlersFor(decl, ctx, {
+      // Off without decoders, because the host decodes what it dispatches and a cast would be the
+      // claim nobody checked. Also off per declaration, so a rule can name the one service whose
+      // dev host is in somebody's way.
+      devHost: options["devHost"] !== false && options["decoders"] !== false,
+      decodes: (d) => optionsFor(d)["decoders"] !== false,
+    });
     return handlers === undefined
       ? undefined
       : {
@@ -265,7 +293,7 @@ function emitFor(decl: Decl, ctx: Context, options: Readonly<Record<string, unkn
           problems: [],
           needs: handlers.needs,
           kernel: new Set(),
-          runtime: new Set(),
+          runtime: handlers.runtime,
           saga: false,
           handlers: handlers.handlers,
         };
@@ -347,7 +375,12 @@ function group(
       for (const name of one.emitted.runtime) runtime.add(name);
       for (const need of one.emitted.needs) {
         const { pkg, name } = splitNeed(need);
-        const base = pascal(name.replace(/Into$/, "").replace(/^is/, ""));
+        // `decode` joins the strippers: the dev host imports another module's `decodePlaceOrder`,
+        // which nothing did before, so the name resolved to no module and the import was dropped.
+        //
+        // The lookahead is what makes it a prefix rather than two letters: `issueInto` is the
+        // decoder for `Issue`, and stripping a bare `is` off it asked for a module exporting `Sue`.
+        const base = pascal(name.replace(/Into$/, "").replace(/^(?:is|decode)(?=[A-Z])/, ""));
         const target = home.get(`${pkg}|${base}`);
         // Nothing to import from the module being written, which is where most of these point.
         if (target === undefined || target === path) continue;
@@ -355,17 +388,23 @@ function group(
       }
     }
 
-    if (runtime.size > 0) runtime.add("Decoded");
-
     const imports: string[] = [
       ...(kernel.size > 0
         ? [`import type { ${[...kernel].sort().join(", ")} } from ${JSON.stringify(relative(path, `${KERNEL_MODULE}.ts`, extension))};`]
         : []),
       ...(runtime.size > 0
-        ? [
-            `import { ${[...runtime].filter((n) => n !== "Decoded").sort().join(", ")} } from ${JSON.stringify(relative(path, `${RUNTIME_MODULE}.ts`, extension))};`,
-            `import type { Decoded } from ${JSON.stringify(relative(path, `${RUNTIME_MODULE}.ts`, extension))};`,
-          ]
+        ? (() => {
+            // Split by what the name is rather than by one hard-coded exception: under
+            // `verbatimModuleSyntax` a type imported as a value does not compile, and the dev host
+            // refers to three more types than `Decoded`.
+            const from = JSON.stringify(relative(path, `${RUNTIME_MODULE}.ts`, extension));
+            const types = [...runtime].filter((n) => RUNTIME_TYPES.has(n)).sort();
+            const values = [...runtime].filter((n) => !RUNTIME_TYPES.has(n)).sort();
+            return [
+              ...(values.length > 0 ? [`import { ${values.join(", ")} } from ${from};`] : []),
+              ...(types.length > 0 ? [`import type { ${types.join(", ")} } from ${from};`] : []),
+            ];
+          })()
         : []),
       ...(needsSaga
         ? [

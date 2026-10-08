@@ -117,8 +117,8 @@ function emit(layout, extra = {}) {
 
 const tsc = join(root, "node_modules", ".bin", process.platform === "win32" ? "tsc.cmd" : "tsc");
 
-function compile(dir) {
-  const result = spawnSync(tsc, ["-p", dir], { encoding: "utf8", shell: process.platform === "win32" });
+function compile(target) {
+  const result = spawnSync(tsc, ["-p", target], { encoding: "utf8", shell: process.platform === "win32" });
   const complaints = `${result.stdout ?? ""}${result.stderr ?? ""}`
     .split("\n")
     .map((l) => l.trim())
@@ -160,17 +160,51 @@ console.log("");
 {
   // The default shape, run rather than only compiled.
   const { dir } = emit("single", {});
-  cpSync(join(root, "verify", "behaviour.ts"), join(dir, "behaviour.ts"));
+  for (const name of ["behaviour.ts", "adapter.ts"]) {
+    cpSync(join(root, "verify", name), join(dir, name));
+  }
 
-  const run = spawnSync(
-    join(root, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx"),
-    [join(dir, "behaviour.ts")],
-    { encoding: "utf8", shell: process.platform === "win32", maxBuffer: 32 * 1024 * 1024 },
+  // Compiled again now that the two checks are beside the output, because `adapter.ts` makes its
+  // central claim as an assignment: a generated dev host, to `@sevenk/sandbox`'s own `Handler`. The
+  // run below could not tell a shape that no longer fits from one that does, since `tsx` strips the
+  // types rather than checking them.
+  //
+  // Its own config, with the two unused-name lints off. `@sevenk/sandbox` resolves to TypeScript
+  // sources rather than to declarations, so those lints would be applied to another package's
+  // internals — and they are here to hold the *generated* code to a consumer's hygiene, which the
+  // loop above has already done.
+  const checks = join(dir, "tsconfig.checks.json");
+  writeFileSync(
+    checks,
+    `${JSON.stringify(
+      { extends: "./tsconfig.json", compilerOptions: { noUnusedLocals: false, noUnusedParameters: false } },
+      null,
+      2,
+    )}
+`,
+    "utf8",
   );
+  const { ok, complaints } = compile(checks);
+  if (ok) {
+    console.log("ok    a generated dev host type-checks as a sandbox `Handler`");
+  } else {
+    failed++;
+    console.log("FAIL  the verify sources do not compile beside the output");
+    for (const line of complaints.slice(0, 8)) console.log(`        ${line}`);
+  }
 
-  const output = `${run.stdout ?? ""}${run.stderr ?? ""}`.trim();
-  console.log(output);
-  if (run.status !== 0) failed++;
+  for (const name of ["behaviour.ts", "adapter.ts"]) {
+    const run = spawnSync(
+      join(root, "node_modules", ".bin", process.platform === "win32" ? "tsx.cmd" : "tsx"),
+      [join(dir, name)],
+      { encoding: "utf8", shell: process.platform === "win32", maxBuffer: 32 * 1024 * 1024 },
+    );
+
+    console.log("");
+    const output = `${run.stdout ?? ""}${run.stderr ?? ""}`.trim();
+    console.log(output);
+    if (run.status !== 0) failed++;
+  }
 }
 
 console.log("");

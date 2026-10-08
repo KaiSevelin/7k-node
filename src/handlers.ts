@@ -20,6 +20,7 @@
 
 import type { Decl, EmitIr, LinkedModel, ReactIr, Ref, ServiceIr } from "@sevenk/core";
 import type { Loss } from "@sevenk/provider";
+import { adapterFor, reachable, runtimeFor, unreachable, type Dispatch } from "./devhost.js";
 import { describePredicate } from "./emit.js";
 import { camel, pascal, qualified, type Context } from "./types.js";
 
@@ -45,8 +46,23 @@ export interface Handlers {
   readonly losses: readonly Loss[];
   /** Type names this module refers to, qualified by package. */
   readonly needs: ReadonlySet<string>;
+  /** Names from the decode runtime, which only the development host brings here. */
+  readonly runtime: ReadonlySet<string>;
   /** One per `reacts`, in the order the interface declares them. */
   readonly handlers: readonly HandlerSymbol[];
+}
+
+/**
+ * What the caller has to tell this about the dev host, because it is not in the model.
+ *
+ * `decodes` is asked per declaration rather than read once: `decoders` is a declaration-scope option,
+ * so a rule may switch it off for one message while leaving it on for the service that reacts to it —
+ * and a dispatcher calling a decoder that was never generated is a generated module that does not
+ * compile.
+ */
+export interface Host {
+  readonly devHost: boolean;
+  readonly decodes: (decl: Decl) => boolean;
 }
 
 const indent = (lines: readonly string[]): string[] => lines.map((l) => (l === "" ? "" : `  ${l}`));
@@ -339,12 +355,13 @@ function outbound(
  * reasoned about whole, not so it can be implemented here. Generating an interface for one would
  * invite somebody to implement it, which is the opposite of what `@external` says.
  */
-export function handlersFor(decl: Decl, ctx: Context): Handlers | undefined {
+export function handlersFor(decl: Decl, ctx: Context, host: Host): Handlers | undefined {
   if (decl.kind !== "service" || decl.external) return undefined;
   if (decl.reacts.length === 0 && decl.emits.length === 0) return undefined;
 
   const model = ctx.model;
   const needs = new Set<string>();
+  const losses: Loss[] = [];
   const name = `${pascal(decl.id.name)}`;
   const members: string[] = [];
   const outcomes: string[] = [];
@@ -356,6 +373,7 @@ export function handlersFor(decl: Decl, ctx: Context): Handlers | undefined {
 
   const port = outbound(decl, model, needs);
   const handlers: HandlerSymbol[] = [];
+  const dispatches: Dispatch[] = [];
 
   for (const react of decl.reacts) {
     const message = model.declFor(react.message);
@@ -374,6 +392,54 @@ export function handlersFor(decl: Decl, ctx: Context): Handlers | undefined {
 
     const outcomeName = `${pascal(method.replace(/^handle/, ""))}Outcome`;
     if (replies.length > 1) outcomes.push(...outcome(outcomeName, replies), "");
+
+    if (host.devHost) {
+      // Collected from the same values that write the signature, so the dispatcher cannot call the
+      // method with the wrong arguments or in the wrong order. The reply is named as the `replies`
+      // clause spells it, which is the one spelling guaranteed to resolve at the other end: it
+      // resolved when the model was linked, from the package the runtime will resolve it from.
+      const missing = [message, ...envelopes].filter((d) => !host.decodes(d));
+      if (missing.length > 0) {
+        losses.push({
+          construct: "subscription",
+          at: `${qualified(decl)} / ${qualified(message)}`,
+          fidelity: "none",
+          detail:
+            `The development host decodes what it dispatches, and ${missing
+              .map((d) => `\`${qualified(d)}\``)
+              .join(", ")} has no decoder — \`decoders\` is off for it. So this subscription has no ` +
+            `case, and a scenario delivering \`${qualified(message)}\` here will say the host does ` +
+            `not react to it. Casting instead would be a claim nobody checked, which is the one ` +
+            `thing a decoder exists to refuse.`,
+        });
+      } else {
+        for (const one of [message, ...envelopes]) {
+          needs.add(need(one.id.pkg, `decode${pascal(one.id.name)}`));
+        }
+        dispatches.push({
+          type: `${message.id.pkg}.${message.id.name}`,
+          subscription: react.subscription,
+          isDefault: react.subscription === decl.id.name,
+          method,
+          args: [
+            `sevenKDecoded(${JSON.stringify(qualified(message))}, decode${pascal(message.id.name)}(message.body))`,
+            // Every declared envelope record reads from the one flattened map (D50). A decoder reads
+            // tolerantly, so a second envelope's fields sitting beside this one's are ignored rather
+            // than reported — which is what makes reading each record out of one map work at all.
+            ...envelopes.map(
+              (e) =>
+                `sevenKDecoded(${JSON.stringify(qualified(e))}, decode${pascal(e.id.name)}(message.envelope.fields))`,
+            ),
+          ],
+          replies: (react.replies ?? [])
+            .filter((r): r is Ref => r !== "none")
+            .flatMap((ref) => {
+              const reply = model.declFor(ref);
+              return reply === undefined ? [] : [{ case: pascal(reply.id.name), reply: ref.text }];
+            }),
+        });
+      }
+    }
 
     const returns =
       replies.length === 0
@@ -432,6 +498,22 @@ export function handlersFor(decl: Decl, ctx: Context): Handlers | undefined {
     lines.push(...port.lines);
   }
 
+  const adapter =
+    dispatches.length === 0
+      ? []
+      : adapterFor(qualified(decl), name, `${camel(decl.id.name)}DevHost`, port?.name, dispatches);
+  if (adapter.length > 0) {
+    if (lines.length > 0) lines.push("");
+    lines.push(...adapter);
+  }
+  for (const lost of reachable(dispatches).lost) losses.push(unreachable(qualified(decl), lost));
+
   if (lines.length === 0) return undefined;
-  return { lines, losses: [], needs, handlers };
+  return {
+    lines,
+    losses,
+    needs,
+    runtime: new Set(adapter.length === 0 ? [] : runtimeFor(dispatches)),
+    handlers,
+  };
 }
