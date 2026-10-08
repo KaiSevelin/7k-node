@@ -30,6 +30,21 @@
  *
  * Normalisation is not applied on either side: `normalize upper` happens on receipt, before validation,
  * so a payload here carries already-normalised values and the two sides see the same bytes.
+ *
+ * ### What this cannot catch, and the case that proved it
+ *
+ * It compares two answers. Where both are wrong in the same way it reports agreement, which is the one
+ * failure the method has and is not a reason to distrust it — it is a reason to know the shape of what
+ * it leaves out.
+ *
+ * `bad-date.json` carried `"day": "2026-13-01"` for a long time and passed. Both sides checked the
+ * *shape* of a date with a regex, neither checked the calendar, so both accepted a thirteenth month
+ * and the comparison was green. The payload was testing that two implementations were wrong together.
+ *
+ * It surfaced from outside: C# holds a `date` in a `DateOnly`, which refuses it, so the same payload
+ * the sandbox called valid could not be deserialized by a C# service. What found it was asking a third
+ * implementation — and the lesson is that a second opinion is worth more when it was not written by
+ * the same hand. The calendar payloads beside that one are now the regression.
  */
 
 import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";

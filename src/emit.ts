@@ -265,6 +265,19 @@ function shapeGuard(type: TypeIr, ctx: Context, value: string): Guard {
     runtime: [name],
   });
 
+  /**
+   * The same, where the runtime answers with a function rather than a pattern.
+   *
+   * A regex can say two digits and cannot say "at most twelve", so a date and an instant are checked
+   * for their shape *and* their calendar — `2026-02-31` is neither a day that happened nor a thing
+   * `DateOnly` will deserialize.
+   */
+  const asks = (fn: string, rule: string): Guard => ({
+    wrong: `typeof ${value} !== "string" || !${fn}(${value})`,
+    rule,
+    runtime: [fn],
+  });
+
   switch (base.name) {
     case "bool":
       return { wrong: `typeof ${value} !== "boolean"`, rule: "expected a boolean", runtime: [] };
@@ -290,10 +303,10 @@ function shapeGuard(type: TypeIr, ctx: Context, value: string): Guard {
       return text("UUID", "UUID", "expected a uuid");
 
     case "instant":
-      return text("INSTANT", "INSTANT", "expected an RFC 3339 UTC instant");
+      return asks("isInstant", "expected an RFC 3339 UTC instant");
 
     case "date":
-      return text("CIVIL_DATE", "CIVIL_DATE", "expected a date");
+      return asks("isCivilDate", "expected a date");
 
     case "duration":
       return text("DURATION", "DURATION", "expected a duration, ISO 8601 or a 7K literal");

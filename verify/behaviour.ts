@@ -86,6 +86,16 @@ expect("a uuid that is not one", varied({ orderId: "not-a-uuid" }), "orderId");
 expect("an instant that is not UTC", varied({ stamped: "2026-10-06T14:22:05+02:00" }), "stamped");
 expect("an instant with no fractional digits is fine", varied({ stamped: "2026-10-06T14:22:05Z" }));
 expect("a date that is an instant", varied({ day: "2026-10-06T00:00:00Z" }), "day");
+// A regex can say two digits and cannot say "at most twelve". C# holds a `date` in a `DateOnly` and
+// refuses every one of these, so a decoder that took them made the same model mean two things.
+expect("a thirteenth month", varied({ day: "2026-13-01" }), "day");
+expect("a thirty-first of February", varied({ day: "2026-02-31" }), "day");
+expect("a twenty-ninth in a non-leap year", varied({ day: "2026-02-29" }), "day");
+expect("a twenty-ninth in a leap year is fine", varied({ day: "2024-02-29" }));
+expect("the hundred-year rule, which the cheap version gets wrong", varied({ day: "1900-02-29" }), "day");
+expect("and its four-hundred-year exception", varied({ day: "2000-02-29" }));
+expect("an hour that does not exist", varied({ stamped: "2026-10-06T25:00:00Z" }), "stamped");
+expect("a leap second, which .NET also refuses", varied({ stamped: "2026-12-31T23:59:60Z" }), "stamped");
 // `01-kernel.md` 7: "ISO 8601 on output (`PT30S`); 7K duration literals (`30s`, `1h30m`) accepted on
 // input". This expected `30s` to be *refused*, which is how the decoder came to refuse it — the
 // expectation encoded the bug, and the decode equivalence harness is what noticed, by comparing

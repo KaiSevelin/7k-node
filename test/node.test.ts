@@ -122,8 +122,11 @@ describe("the decoder, which is the whole of the checking here", () => {
   it("checks the shape a branded type claims, which C# gets from its runtime", () => {
     const text = at();
     expect(text).toContain("!UUID.test(");
-    expect(text).toContain("!INSTANT.test(");
     expect(text).toContain("!BASE64URL.test(");
+    // A date is asked rather than matched: a regex can say two digits and cannot say "at most
+    // twelve", and `2026-13-01` is not a day. `verify/behaviour.ts` checks what it decides.
+    expect(text).toContain("!isInstant(");
+    expect(text).toContain("!isCivilDate(");
   });
 
   it("checks a decimal at exactly the declared scale", () => {
