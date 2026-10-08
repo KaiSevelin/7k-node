@@ -19,6 +19,9 @@ value Qty      : int    { range 1..99 }
 value Payload  : bytes  { length 1..64 }
 // A range past 2^53, where a JavaScript `number` stops being exact.
 value Big      : int    { range 0..90071992547409920 }
+// `multipleOf` was the one constraint kind nothing in this fixture exercised, which the decode
+// equivalence harness noticed by having nothing to compare for it.
+value Step     : int    { range 0..100; multipleOf 5 }
 
 record Amount {
   value:    Money
@@ -56,6 +59,8 @@ message PlaceOrder v1.0 @command {
   settleIn: Currency
   weight:   float
   count:    Big
+  // Optional, so nothing that already builds one of these has to change.
+  everyFifth: Step?
 
   invariant total.currency == settleIn
   invariant total.currency == items[].unit.currency

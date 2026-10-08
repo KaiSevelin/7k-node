@@ -196,6 +196,16 @@ function emitValue(decl: ValueIr, ctx: Context): Emitted {
       "  problems: Problems,",
       `): ${name} | undefined {`,
       ...indent([
+        // How many problems there were before this value was looked at.
+        //
+        // `problems.ok` sat here, and `ok` is the *whole walk's* list: one collector is shared so that
+        // paths build themselves as the walk descends. So a value decoded only while nothing anywhere
+        // had failed yet, and after the first failure every later field came back `undefined` — which
+        // skipped its own constraints silently. A payload with a bad list element and a duplicate tag
+        // reported the element and not the duplicate, so "which fields are wrong" was answered in
+        // part. The decode equivalence harness found it; nothing else could, because the overall
+        // decode fails either way and only the problem *list* was short.
+        "const before = problems.all.length;",
         ...(guard.wrong === "false"
           ? []
           : [`if (${guard.wrong}) { problems.add(${quote(guard.rule)}); return undefined; }`]),
@@ -203,7 +213,7 @@ function emitValue(decl: ValueIr, ctx: Context): Emitted {
           ? []
           : [`if (${delegate}(value, problems) === undefined) return undefined;`]),
         ...checks,
-        `return problems.ok ? (value as ${name}) : undefined;`,
+        `return problems.all.length === before ? (value as ${name}) : undefined;`,
       ]),
       "}",
       "",
@@ -280,7 +290,7 @@ function shapeGuard(type: TypeIr, ctx: Context, value: string): Guard {
       return text("CIVIL_DATE", "CIVIL_DATE", "expected a date");
 
     case "duration":
-      return text("DURATION", "DURATION", "expected an ISO 8601 duration");
+      return text("DURATION", "DURATION", "expected a duration, ISO 8601 or a 7K literal");
 
     case "bytes":
       return text("BASE64URL", "BASE64URL", "expected base64url bytes");
@@ -333,6 +343,14 @@ function fieldLines(
   // 1..50 }` says something about this field that `Item` knows nothing about. They are applied to the
   // decoded value, because a `size` is about the list and a `unique` about its elements — neither is
   // a question you can ask of the raw payload before it has been walked.
+  //
+  // **And only when the walk dropped nothing.** An element that fails to decode is left out of the
+  // decoded collection, so a one-element list with one bad element arrived at `size 1..50` holding
+  // none and reported a violation the producer did not commit — a second, derived failure for one
+  // cause. 7K Core reports only the element's own problem, because it validates in place and the list
+  // it measures is the one that was sent. The decode equivalence harness found this on six payloads
+  // at once. Guarding the whole block rather than just `size` is deliberate: comparing a partial list
+  // for `unique` is unsound in the same way, and for the same reason.
   const own: string[] = [];
   if (field.constraints.length > 0) {
     const shape = shapeOf(field.type, ctx);
@@ -344,8 +362,15 @@ function fieldLines(
       if (constraint.name === "unique") state.runtime.add("allDistinct");
     }
     if (checks.length > 0) {
+      const intact =
+        shape === "list"
+          ? `${local} !== undefined && Array.isArray(${property}) && ${local}.length === ${property}.length`
+          : shape === "map"
+            ? `${local} !== undefined && isObject(${property}) && Object.keys(${local}).length === Object.keys(${property}).length`
+            : `${local} !== undefined`;
+      if (shape === "map") state.runtime.add("isObject");
       own.push(
-        `if (${local} !== undefined) {`,
+        `if (${intact}) {`,
         ...indent([`const problems = here.under(${quote(field.name)});`, ...checks]),
         "}",
       );
@@ -489,11 +514,14 @@ function scalarInto(
   raw: string,
   into: string,
 ): string[] {
-  const body = [...checks, `if (problems.ok) ${into} = ${raw} as typeof ${into};`];
+  // Measured locally, not with `problems.ok`: the collector is shared across the whole walk, so `ok`
+  // asks whether *anything* has failed. See the longer note on the branded decoder above.
+  const body = [...checks, `if (problems.all.length === before) ${into} = ${raw} as typeof ${into};`];
   return [
     "{",
     ...indent([
       `const problems = ${problems};`,
+      "const before = problems.all.length;",
       ...(guard.wrong === "false"
         ? body
         : [`if (${guard.wrong}) problems.add(${quote(guard.rule)});`, "else {", ...indent(body), "}"]),

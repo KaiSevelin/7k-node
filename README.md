@@ -40,6 +40,7 @@ exactly the declared scale: a number is a double, and money must not round-trip 
 npm test            # 55 tests, including what this provider may depend on
 npm run verify      # tsc under a consumer's own strictness, then runs the output
 npm run equivalence # the generated saga vs. 7K's reference engine, 7 scripts
+npm run decoding    # the generated decoders vs. 7K's contract runtime, 30 payloads
 ```
 
 `npm run verify` compiles the generated modules under strict settings a *consumer* would choose, not
@@ -53,6 +54,28 @@ TypeScript, so the generated machine and the 7K sandbox's own saga engine are im
 process** and driven from one script. There is no cross-language harness, no interchange format and no
 decision string to compare across a gap — three things that can disagree for reasons that have nothing
 to do with sagas. The only thing that can differ is a decision.
+
+`npm run decoding` does the same for the data layer: one payload, read by 7K Core's contract runtime and
+by the generated decoder, compared as a multiset of (field, rule kind). Core is the reference because it
+is the runtime that rejects a payload on receipt, so a decoder that disagrees is refusing — or
+accepting — something no runtime will.
+
+**The comparison is tighter here than the C# provider's can be.** There, a generated validator only
+adds the rules the type system cannot carry, so everything structural has to be dropped: a missing
+required property will not compile and a `Guid` cannot hold `"not-a-uuid"`. Here the decoder takes
+`unknown` and is the whole of the checking, so shape is in scope — a missing field, a `null` where an
+absent field was meant, a string where a number goes. Paths match too: a decoder builds its path as it
+walks a value, so it says `items[0].sku` exactly as Core does, where C# can only say `items[].sku`.
+
+Two narrowings remain, and one named difference. Not the prose, because Core writes sentences and the
+decoder writes the rule as the model states it. Not the order, because that is two walks. And tolerant
+versus strict reading of an undeclared field, which `02-contract.md` leaves to the pipe — the decoder
+reads tolerantly, which is right for a consumer, Core reads strictly, which is right for a hand-typed
+scenario body, and neither takes a mode. It is reported on every run rather than dropped from the
+fixture.
+
+Three bugs came out of its first run: durations, `multipleOf`, and a problem list that went short after
+the first failure. See the commit for each.
 
 ## What it depends on
 

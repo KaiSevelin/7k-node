@@ -86,7 +86,14 @@ expect("a uuid that is not one", varied({ orderId: "not-a-uuid" }), "orderId");
 expect("an instant that is not UTC", varied({ stamped: "2026-10-06T14:22:05+02:00" }), "stamped");
 expect("an instant with no fractional digits is fine", varied({ stamped: "2026-10-06T14:22:05Z" }));
 expect("a date that is an instant", varied({ day: "2026-10-06T00:00:00Z" }), "day");
-expect("a duration that is not ISO 8601", varied({ held: "30s" }), "held");
+// `01-kernel.md` 7: "ISO 8601 on output (`PT30S`); 7K duration literals (`30s`, `1h30m`) accepted on
+// input". This expected `30s` to be *refused*, which is how the decoder came to refuse it — the
+// expectation encoded the bug, and the decode equivalence harness is what noticed, by comparing
+// against a runtime that reads the spec the same way the language does.
+expect("a 7K duration literal, which the spec accepts on input", varied({ held: "30s" }));
+expect("a compound 7K duration literal", varied({ held: "1h30m" }));
+expect("an ISO 8601 duration", varied({ held: "PT30S" }));
+expect("a duration that is neither form", varied({ held: "a while" }), "held");
 expect("bytes that are not base64url", varied({ token: "not base64!" }), "token");
 
 // A decimal is a string with exactly the declared scale, because a number is a double.

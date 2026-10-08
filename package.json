@@ -17,7 +17,8 @@
     "test": "vitest run",
     "typecheck": "tsc --build --force",
     "verify": "tsx scripts/verify.mjs",
-    "equivalence": "tsx scripts/equivalence.mjs"
+    "equivalence": "tsx scripts/equivalence.mjs",
+    "decoding": "tsx scripts/decoding.mjs"
   },
   "dependencies": {
     "@sevenk/core": "file:../7K/packages/core",

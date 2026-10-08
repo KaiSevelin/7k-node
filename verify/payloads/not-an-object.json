@@ -1,0 +1,4 @@
+{
+  "type": "shop.PlaceOrder",
+  "body": "a string where a record goes"
+}

@@ -1,0 +1,36 @@
+{
+  "type": "shop.PlaceOrder",
+  "body": {
+    "orderId": "11111111-1111-1111-1111-111111111111",
+    "items": [
+      {
+        "name": "a line",
+        "sku": "SKU-1",
+        "qty": 2,
+        "unit": {
+          "value": "12.50",
+          "currency": "SEK"
+        }
+      }
+    ],
+    "total": {
+      "value": "12.50",
+      "currency": "SEK"
+    },
+    "tags": [
+      "one",
+      "two"
+    ],
+    "rates": {
+      "SEK": "1.00"
+    },
+    "status": "Open",
+    "token": "AAEC",
+    "stamped": "2026-01-01T00:00:00Z",
+    "held": "30s",
+    "day": "2026-01-01",
+    "settleIn": "SEK",
+    "weight": 1.5,
+    "count": "not a number"
+  }
+}

@@ -131,7 +131,17 @@ export const RUNTIME = [
   "export const INSTANT = /^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d{1,6})?Z$/;",
   "export const CIVIL_DATE = /^\\d{4}-\\d{2}-\\d{2}$/;",
   "export const BASE64URL = /^[A-Za-z0-9_-]*$/;",
-  "export const DURATION = /^-?P(?!$)(\\d+(\\.\\d+)?[DW])?(T(?!$)(\\d+(\\.\\d+)?[HMS])+)?$/;",
+  "/**",
+  " * ISO 8601, or a 7K duration literal.",
+  " *",
+  " * Both, because `01-kernel.md` section 7 says both: \"ISO 8601 on output (`PT30S`); 7K duration",
+  " * literals (`30s`, `1h30m`) accepted on input\". This took only the first, so a generated decoder",
+  " * refused every payload whose producer wrote a duration the way the language writes one — which is",
+  " * the way a scenario writes one, and the way 7K Core accepts. `ms` comes before `s` in the",
+  " * alternation, or `30ms` matches as thirty seconds with a stray `s` after it.",
+  " */",
+  "export const DURATION =",
+  "  /^(?:-?P(?!$)(?:\\d+(?:\\.\\d+)?[DW])?(?:T(?!$)(?:\\d+(?:\\.\\d+)?[HMS])+)?|(?:\\d+(?:ms|s|m|h|d))+)$/;",
   "",
   "/** A decimal with exactly the declared scale, which is what the contract says it is. */",
   "export const decimalAt = (scale: number): RegExp =>",
@@ -177,7 +187,13 @@ function checksFor(
   const guard = (condition: string, text: string): string =>
     `if (${condition}) problems.add(${quote(text)});`;
 
-  switch (constraint.name) {
+  // Lowercased, because that is what the IR carries: a constraint's name comes from its keyword, and
+  // the keywords are lowercase (`multipleof`, not `multipleOf`). A `case "multipleOf"` sat here and
+  // never matched, so every `multipleOf` in every model fell through to the loss below — which then
+  // reported, untruthfully, that this provider cannot express it. The C# provider had the identical
+  // bug, written independently, which says the trap is the IR's lowercase name and not one author's
+  // carelessness. The decode equivalence harness found both.
+  switch (constraint.name.toLowerCase()) {
     case "length": {
       // On a string this counts characters; on a list it counts elements, exactly as `size` does.
       const of = shape === "list" ? `${value}.length` : `${value}.length`;
@@ -209,7 +225,7 @@ function checksFor(
       return { lines: parts.length === 0 ? [] : [guard(parts.join(" || "), rule("range"))] };
     }
 
-    case "multipleOf": {
+    case "multipleof": {
       const by = constraint.args[0] ?? "1";
       const n = shape === "number" ? value : `Number(${value})`;
       return { lines: [guard(`${n} % ${by} !== 0`, `multipleOf ${by}`)] };
