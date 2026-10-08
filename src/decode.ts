@@ -20,7 +20,7 @@
  */
 
 import type { ConstraintIr, Decl, FieldIr, Predicate, TypeIr } from "@sevenk/core";
-import { flatFieldsOf } from "@sevenk/core";
+import { flatFieldsOf, intIsWide } from "@sevenk/core";
 import { declOf, pascal, type Context, type TypeProblem } from "./types.js";
 
 export interface Decoder {
@@ -287,7 +287,7 @@ function checksFor(
   constraint: ConstraintIr,
   value: string,
   at: string,
-  shape: "string" | "number" | "list" | "map" | "other",
+  shape: Shape,
 ): Check {
   const b = bounds(constraint.args);
   const rule = (name: string): string =>
@@ -324,20 +324,25 @@ function checksFor(
     }
 
     case "range": {
-      // A decimal is a string, so its range is compared numerically rather than lexically: `"9"` is
-      // greater than `"10"` as text and is not as a number.
-      const n = shape === "number" ? value : `Number(${value})`;
+      // Three ways, because three things are being compared. A number compares as itself. A decimal
+      // is a string and compares numerically rather than lexically — `"9"` is greater than `"10"` as
+      // text. And a wide int is a string whose whole reason for being one is that `Number` would
+      // round it, so it compares as a `bigint`; the bounds are written `10n` for the same reason.
+      const big = shape === "wideint";
+      const n = shape === "number" ? value : big ? `BigInt(${value})` : `Number(${value})`;
+      const lit = (x: string | number): string => (big ? `${x}n` : `${x}`);
       const parts: string[] = [];
-      if (b.exact !== undefined) parts.push(`${n} !== ${b.exact}`);
-      if (b.low !== undefined) parts.push(`${n} < ${b.low}`);
-      if (b.high !== undefined) parts.push(`${n} > ${b.high}`);
+      if (b.exact !== undefined) parts.push(`${n} !== ${lit(b.exact)}`);
+      if (b.low !== undefined) parts.push(`${n} < ${lit(b.low)}`);
+      if (b.high !== undefined) parts.push(`${n} > ${lit(b.high)}`);
       return { lines: parts.length === 0 ? [] : [guard(parts.join(" || "), rule("range"))] };
     }
 
     case "multipleof": {
       const by = constraint.args[0] ?? "1";
-      const n = shape === "number" ? value : `Number(${value})`;
-      return { lines: [guard(`${n} % ${by} !== 0`, `multipleOf ${by}`)] };
+      const big = shape === "wideint";
+      const n = shape === "number" ? value : big ? `BigInt(${value})` : `Number(${value})`;
+      return { lines: [guard(`${n} % ${big ? `${by}n` : by} !== 0`, `multipleOf ${by}`)] };
     }
 
     case "pattern": {
@@ -384,19 +389,38 @@ function checksFor(
   }
 }
 
-/** What shape a value has at runtime, which decides how it is checked and counted. */
-export function shapeOf(type: TypeIr, ctx: Context): "string" | "number" | "list" | "map" | "other" {
+export type Shape = "string" | "number" | "wideint" | "list" | "map" | "other";
+
+/**
+ * What shape a value has at runtime, which decides how it is checked and counted.
+ *
+ * `wideint` is a string that carries an integer: an `int` whose declared range reaches past what a
+ * JSON number holds exactly travels as text (`01-kernel.md` 7.1). It is its own shape and not
+ * `string`, because the rules on it are arithmetic — comparing `"9"` with `"10"` as text gets the
+ * wrong answer, and comparing them through `Number` gets the right answer for the wrong reason until
+ * the day the value is large enough to matter, which for this type is the only day that counts.
+ *
+ * The constraints come in because the answer depends on them, which is unusual for a shape and is
+ * what the rule asks for: the encoding is per field, decided from the model.
+ */
+export function shapeOf(
+  type: TypeIr,
+  ctx: Context,
+  constraints: readonly ConstraintIr[] = [],
+): Shape {
   if (type.t === "list") return "list";
   if (type.t === "map") return "map";
   if (type.t === "kernel") {
-    if (type.name === "int" || type.name === "float") return "number";
+    if (type.name === "int") return intIsWide({ constraints }) ? "wideint" : "number";
+    if (type.name === "float") return "number";
     if (type.name === "bool") return "other";
     // Everything else the kernel has is a string on the wire, decimals included.
     return "string";
   }
   if (type.t === "ref") {
     const decl = declOf(type, ctx);
-    if (decl?.kind === "value") return shapeOf(decl.base, ctx);
+    // A value's own constraints are what bound it, so they replace rather than join the caller's.
+    if (decl?.kind === "value") return shapeOf(decl.base, ctx, decl.constraints);
     if (decl?.kind === "enum") return "string";
   }
   return "other";

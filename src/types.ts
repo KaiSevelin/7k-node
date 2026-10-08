@@ -22,6 +22,7 @@
  *   type to it unless something is done; a brand is the something, and it costs nothing at runtime.
  */
 
+import { intIsWide } from "@sevenk/core";
 import type { Decl, FieldIr, LinkedModel, TypeIr } from "@sevenk/core";
 
 /** Where `number` stops being exact. */
@@ -119,6 +120,11 @@ export function tsType(type: TypeIr, ctx: Context, at: string): Typed {
       // A value is nominal in 7K. As an alias it becomes the type it refines, which TypeScript cannot
       // tell apart from any other of that type — a real loss, and why `brand` is the default.
       if (decl.kind === "value" && ctx.valueTypes === "alias") {
+        // Its own constraints come with it, because the encoding depends on them: a wide `int` is
+        // carried as text, so the alias is `string` and not the `number` its kernel base would give.
+        if (decl.base.t === "kernel" && decl.base.name === "int" && intIsWide({ constraints: decl.constraints })) {
+          return { text: "string", problems: [] };
+        }
         return tsType(decl.base, ctx, at);
       }
 

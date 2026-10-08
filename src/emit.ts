@@ -7,7 +7,18 @@
  * or the reasons it is not one.
  */
 
-import type { Decl, EnumIr, FieldIr, MessageIr, Predicate, RecordIr, TypeIr, ValueIr } from "@sevenk/core";
+import { intIsWide } from "@sevenk/core";
+import type {
+  ConstraintIr,
+  Decl,
+  EnumIr,
+  FieldIr,
+  MessageIr,
+  Predicate,
+  RecordIr,
+  TypeIr,
+  ValueIr,
+} from "@sevenk/core";
 import type { Loss } from "@sevenk/provider";
 import type { HandlerSymbol } from "./handlers.js";
 import {
@@ -125,13 +136,18 @@ function emitEnum(decl: EnumIr): Emitted {
  */
 function emitValue(decl: ValueIr, ctx: Context): Emitted {
   const name = pascal(decl.id.name);
-  const base = tsType(decl.base, ctx, decl.id.name);
+  const kernelBase = tsType(decl.base, ctx, decl.id.name);
+  // A wide `int` is carried as text, so the type it brands is `string` and not `number`. Decided by
+  // Core's `intIsWide`, which is the same question the guard below asks.
+  const wideInt =
+    decl.base.t === "kernel" && decl.base.name === "int" && intIsWide({ constraints: decl.constraints });
+  const base = wideInt ? { text: "string", problems: kernelBase.problems } : kernelBase;
   const kernel = new Set<string>();
   const losses: Loss[] = [];
   kernelIn(base.text, kernel);
 
   const rules = decl.constraints.map(sayConstraint);
-  const shape = shapeOf(decl.base, ctx);
+  const shape = shapeOf(decl.base, ctx, decl.constraints);
 
   if (ctx.valueTypes === "alias") {
     return {
@@ -157,7 +173,7 @@ function emitValue(decl: ValueIr, ctx: Context): Emitted {
   kernel.add("Branded");
 
   const checks: string[] = [];
-  const guard = shapeGuard(decl.base, ctx, "value");
+  const guard = shapeGuard(decl.base, ctx, "value", decl.constraints);
   for (const constraint of decl.constraints) {
     const check = checksFor(constraint, "value", decl.id.name, shape);
     checks.push(...check.lines);
@@ -255,7 +271,13 @@ interface Guard {
  * `if`/`else` — stripping a `return` out of a ready-made statement leaves the narrowing behind, and
  * then every check after it runs against `unknown`.
  */
-function shapeGuard(type: TypeIr, ctx: Context, value: string): Guard {
+function shapeGuard(
+  type: TypeIr,
+  ctx: Context,
+  value: string,
+  /** Everything bounding this value, its own and whatever its type chain brings. */
+  constraints: readonly ConstraintIr[] = [],
+): Guard {
   const base = throughOf(type, ctx);
   if (base.t !== "kernel") return { wrong: "false", rule: "", runtime: [] };
 
@@ -283,11 +305,29 @@ function shapeGuard(type: TypeIr, ctx: Context, value: string): Guard {
       return { wrong: `typeof ${value} !== "boolean"`, rule: "expected a boolean", runtime: [] };
 
     case "int":
-      return {
-        wrong: `typeof ${value} !== "number" || !Number.isInteger(${value})`,
-        rule: "expected an integer",
-        runtime: [],
-      };
+      /**
+       * A string where the declared range leaves what a number holds exactly.
+       *
+       * `01-kernel.md` 7.1, and the decision is 7K Core's `intIsWide` rather than this provider's —
+       * four providers each deciding what "can exceed" means is four chances to disagree about a
+       * wire format, which is the thing the rule exists to stop.
+       *
+       * A branded *string* rather than a `bigint`, which was the obvious alternative and is wrong
+       * for this provider: everything here rests on a decoded value being canonical JSON under
+       * `JSON.stringify` with no serializer, and a `bigint` throws there. The string is what the
+       * wire carries anyway, so the brand is the only thing added.
+       */
+      return intIsWide({ constraints })
+        ? {
+            wrong: `typeof ${value} !== "string" || !/^-?\\d+$/.test(${value})`,
+            rule: "expected an integer as a string, because its range reaches past 2^53",
+            runtime: [],
+          }
+        : {
+            wrong: `typeof ${value} !== "number" || !Number.isInteger(${value})`,
+            rule: "expected an integer",
+            runtime: [],
+          };
 
     case "float":
       return {
@@ -372,7 +412,8 @@ function fieldLines(
   // for `unique` is unsound in the same way, and for the same reason.
   const own: string[] = [];
   if (field.constraints.length > 0) {
-    const shape = shapeOf(field.type, ctx);
+    // The field's own constraints *and* its type's: `count: Big` is wide because `Big` says so.
+    const shape = shapeOf(field.type, ctx, [...field.constraints, ...chainOf(field.type, ctx)]);
     const checks: string[] = [];
     for (const constraint of field.constraints) {
       const check = checksFor(constraint, local, at, shape);
@@ -434,8 +475,8 @@ function valueInto(
   if (decl !== undefined && (decl.kind === "value" || decl.kind === "record" || decl.kind === "envelope")) {
     if (decl.kind === "value" && ctx.valueTypes === "alias") {
       // No decoder to call, so the rules are inlined — otherwise choosing `alias` would drop them.
-      const shape = shapeOf(type, ctx);
-      const guard = shapeGuard(type, ctx, raw);
+      const shape = shapeOf(type, ctx, chainOf(type, ctx));
+      const guard = shapeGuard(type, ctx, raw, chainOf(type, ctx));
       for (const name of guard.runtime) state.runtime.add(name);
       const checks: string[] = [];
       for (const constraint of chainOf(type, ctx)) {
@@ -514,7 +555,7 @@ function valueInto(
   }
 
   // A kernel scalar: the shape is the whole of the check at this level.
-  const guard = shapeGuard(type, ctx, raw);
+  const guard = shapeGuard(type, ctx, raw, chainOf(type, ctx));
   for (const name of guard.runtime) state.runtime.add(name);
   return scalarInto(guard, [], problems, raw, into);
 }

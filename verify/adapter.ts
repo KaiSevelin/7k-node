@@ -114,7 +114,7 @@ const BODY = `{
       day:      "2026-01-01",
       settleIn: "SEK",
       weight:   1.5,
-      count:    7
+      count:    "7"
     }`;
 
 const SCENARIO = `scenarios for shop
@@ -237,7 +237,9 @@ const valid = (): Record<string, unknown> => ({
   day: "2026-01-01",
   settleIn: "SEK",
   weight: 1.5,
-  count: 7,
+  // Text, because `Big` declares a range past 2^53 and `01-kernel.md` 7.1 carries such an int as a
+  // string. The decoder below is what proves the adapter honours that.
+  count: "7",
 });
 
 /**

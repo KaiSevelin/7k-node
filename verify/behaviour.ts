@@ -48,7 +48,10 @@ const base = (): Record<string, unknown> => ({
   day: "2026-10-06",
   settleIn: "SEK",
   weight: 1.5,
-  count: 1,
+  // `Big` declares `range 0..90071992547409920`, which leaves what a JSON number carries exactly, so
+  // `01-kernel.md` 7.1 says it travels as text. That is the whole point of the string form: the value
+  // below is one a `number` cannot hold.
+  count: "1",
 });
 
 /** The valid payload with one thing changed. */
@@ -88,6 +91,11 @@ expect("an instant with no fractional digits is fine", varied({ stamped: "2026-1
 expect("a date that is an instant", varied({ day: "2026-10-06T00:00:00Z" }), "day");
 // A regex can say two digits and cannot say "at most twelve". C# holds a `date` in a `DateOnly` and
 // refuses every one of these, so a decoder that took them made the same model mean two things.
+// The form the model asks for, and the reason it asks: a `number` cannot tell these two apart.
+expect("a wide int as a number, which the model says travels as text", varied({ count: 1 }), "count");
+expect("a wide int at its declared maximum", varied({ count: "90071992547409920" }));
+expect("one past it, which only exact comparison can see", varied({ count: "90071992547409921" }), "count");
+
 expect("a thirteenth month", varied({ day: "2026-13-01" }), "day");
 expect("a thirty-first of February", varied({ day: "2026-02-31" }), "day");
 expect("a twenty-ninth in a non-leap year", varied({ day: "2026-02-29" }), "day");
