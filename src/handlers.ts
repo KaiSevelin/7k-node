@@ -23,11 +23,30 @@ import type { Loss } from "@sevenk/provider";
 import { describePredicate } from "./emit.js";
 import { camel, pascal, qualified, type Context } from "./types.js";
 
+/**
+ * Where each handler landed, for a tool that wants to point at it rather than read it.
+ *
+ * The model says `reacts PlaceOrder from inbound`, so anyone can see which service handles it; nobody
+ * but this provider knows the method is `handlePlaceOrder`, because that name is its own convention
+ * applied to the model. Recorded from the same call that names it in the interface, so the symbol
+ * reported and the symbol written cannot drift.
+ */
+export interface HandlerSymbol {
+  /** The message handled, qualified in the model's terms. */
+  readonly message: string;
+  /** The method, as TypeScript spells it: `handlePlaceOrder`. */
+  readonly method: string;
+  /** The interface that declares it, for context: `Desk`. */
+  readonly declaredBy: string;
+}
+
 export interface Handlers {
   readonly lines: readonly string[];
   readonly losses: readonly Loss[];
   /** Type names this module refers to, qualified by package. */
   readonly needs: ReadonlySet<string>;
+  /** One per `reacts`, in the order the interface declares them. */
+  readonly handlers: readonly HandlerSymbol[];
 }
 
 const indent = (lines: readonly string[]): string[] => lines.map((l) => (l === "" ? "" : `  ${l}`));
@@ -336,6 +355,7 @@ export function handlersFor(decl: Decl, ctx: Context): Handlers | undefined {
   for (const envelope of envelopes) needs.add(need(envelope.id.pkg, pascal(envelope.id.name)));
 
   const port = outbound(decl, model, needs);
+  const handlers: HandlerSymbol[] = [];
 
   for (const react of decl.reacts) {
     const message = model.declFor(react.message);
@@ -343,6 +363,12 @@ export function handlersFor(decl: Decl, ctx: Context): Handlers | undefined {
     needs.add(need(message.id.pkg, pascal(message.id.name)));
 
     const method = methodName(react, decl, model);
+    // Recorded here, from the call that names the method in the file below.
+    handlers.push({
+      message: `${message.id.pkg}.${message.id.name}`,
+      method,
+      declaredBy: pascal(decl.id.name),
+    });
     const replies = repliesOf(react, model);
     for (const reply of replies) needs.add(need(reply.id.pkg, pascal(reply.id.name)));
 
@@ -407,5 +433,5 @@ export function handlersFor(decl: Decl, ctx: Context): Handlers | undefined {
   }
 
   if (lines.length === 0) return undefined;
-  return { lines, losses: [], needs };
+  return { lines, losses: [], needs, handlers };
 }

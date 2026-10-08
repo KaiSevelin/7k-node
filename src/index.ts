@@ -23,6 +23,7 @@ import type { Decl } from "@sevenk/core";
 import type {
   Artifact,
   Generated,
+  GeneratedSymbol,
   Loss,
   OptionSpec,
   Provider,
@@ -215,10 +216,33 @@ export const node: Provider = {
       built.push({ decl, emitted });
     }
 
-    return {
-      artifacts: group(built, request.layout, extension, wantsIndex),
-      refusals,
-    };
+    const artifacts = group(built, request.layout, extension, wantsIndex);
+
+    // Where each handler landed, so a tool can point at the code without learning TypeScript's
+    // conventions — or this provider's. The path is found by asking which artifact was made `from`
+    // this service rather than by recomputing `pathFor`: under `per-package` or `single` the service
+    // shares a module with everything else in it, and a second guess at where it went is a second
+    // thing to keep in step.
+    const symbols: GeneratedSymbol[] = [];
+    for (const { decl, emitted } of built) {
+      if (emitted.handlers === undefined) continue;
+      const qname = qualified(decl);
+      const holder = artifacts.find((a) => (a.from ?? []).includes(qname));
+      for (const handler of emitted.handlers) {
+        symbols.push({
+          at: handler.message,
+          on: qname,
+          kind: "handler",
+          symbol: handler.method,
+          ...(holder === undefined ? {} : { path: holder.path }),
+        });
+      }
+      if (holder !== undefined) {
+        symbols.push({ at: qname, kind: "service", symbol: pascal(decl.id.name), path: holder.path });
+      }
+    }
+
+    return { artifacts, refusals, symbols };
   },
 };
 
@@ -243,6 +267,7 @@ function emitFor(decl: Decl, ctx: Context, options: Readonly<Record<string, unkn
           kernel: new Set(),
           runtime: new Set(),
           saga: false,
+          handlers: handlers.handlers,
         };
   }
 

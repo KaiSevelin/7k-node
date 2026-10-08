@@ -9,6 +9,7 @@
 
 import type { Decl, EnumIr, FieldIr, MessageIr, Predicate, RecordIr, TypeIr, ValueIr } from "@sevenk/core";
 import type { Loss } from "@sevenk/provider";
+import type { HandlerSymbol } from "./handlers.js";
 import {
   chainOf,
   checksFor,
@@ -33,6 +34,8 @@ export interface Emitted {
   readonly runtime: ReadonlySet<string>;
   /** Whether this module refers to the saga runtime. */
   readonly saga?: boolean;
+  /** For a service: the handler method named for each `reacts`. */
+  readonly handlers?: readonly HandlerSymbol[];
 }
 
 const doc = (lines: readonly string[]): string[] => ["/**", ...lines.map((l) => ` * ${l}`), " */"];
