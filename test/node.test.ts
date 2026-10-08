@@ -17,7 +17,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { buildWorkspace, type Decl, type LinkedModel } from "@sevenk/core";
-import { buildNames, compileRules, withDefaults, type Request } from "@sevenk/generate";
+import { buildNames, compileRules, withDefaults, type Request, type Rule } from "@sevenk/generate";
 import { node } from "../src/index.js";
 
 /**
@@ -38,9 +38,10 @@ function request(
   m: LinkedModel,
   options: Record<string, unknown> = {},
   layout: Request["layout"] = "single",
+  rules: readonly Rule[] = [],
 ): Request {
   const { names } = buildNames(m, []);
-  const compiled = compileRules(m, []);
+  const compiled = compileRules(m, rules);
   // Through the same defaulting the CLI uses, so a test cannot pass on a default the CLI never applies.
   const defaults = withDefaults(node.options, options);
   return {
@@ -374,6 +375,27 @@ describe("the development host", () => {
     const text = code({ decoders: false });
     expect(text).toContain("export interface Desk {");
     expect(text).not.toContain("deskDevHost");
+  });
+
+  /**
+   * `decoders` is a declaration-scope option, so a rule may switch it off for one message while
+   * leaving it on for the service that reacts to it. A dispatcher calling a decoder that was never
+   * generated is a module that does not compile, so the case goes and says why.
+   */
+  it("drops the one subscription whose message lost its decoder, and says so", () => {
+    const out = node.generate(
+      request(model(), {}, "single", [{ where: "message:PlaceOrder", decoders: false }]),
+    );
+    const text = named(out, "model.ts");
+
+    expect(text).toContain("export const deskDevHost =");
+    expect(text).toContain('      case "shop.Charged": {');
+    expect(text).not.toContain('      case "shop.PlaceOrder": {');
+
+    const loss = out.artifacts
+      .flatMap((a) => a.losses)
+      .find((l) => l.at === "shop.Desk / shop.PlaceOrder");
+    expect(loss?.detail).toContain("has no decoder");
   });
 
   /**
