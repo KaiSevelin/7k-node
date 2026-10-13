@@ -23,6 +23,16 @@ A decoder is the point. JSON carries no types, so `decodePlaceOrder(payload)` re
 `{ ok: true, value }` or every problem it found — never a cast. `decimal(p,s)` must be a **string** at
 exactly the declared scale: a number is a double, and money must not round-trip through one.
 
+## What it can express
+
+Every construct this provider handles better or worse than exactly is declared in `covers`, in
+`src/index.ts`, with a note saying what becomes of it and what to do instead. Spider shows the list
+in the provider's settings, worst first.
+
+Declared rather than written out here, because a second copy is a copy that drifts — and this one is
+checked: `test/coverage.test.ts` runs the declaration against the losses this provider reports over
+the `verify/model` fixture, so claiming to hold something it then gives up fails the suite.
+
 ## Options
 
 | Option | Values | Default |

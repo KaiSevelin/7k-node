@@ -150,6 +150,83 @@ export const node: Provider = {
    * infrastructure rather than code.
    */
   emits: ["enum", "value", "record", "envelope", "message", "saga", "service"],
+  /**
+   * What the generated code holds of the model, and where it stops.
+   *
+   * The decoder checks what the model states, so most of this is `full` — but TypeScript's two
+   * defining properties both cost something a reader should know before committing a model here: a
+   * type is gone at runtime, so nothing is checked where no decoder is generated; and the type
+   * system is structural, so a `value` is not a distinct type unless asked to be. Three entries
+   * depend on an option (`decoders`, `valueTypes`, `handlers`) and name it.
+   */
+  covers: [
+    {
+      construct: "pattern",
+      fidelity: "full",
+      note: "A `RegExp` over the model's own pattern, with JavaScript's own regex semantics.",
+    },
+    { construct: "range", fidelity: "full" },
+    { construct: "multipleOf", fidelity: "full" },
+    { construct: "length", fidelity: "full" },
+    { construct: "size", fidelity: "full" },
+    { construct: "unique", fidelity: "full" },
+    {
+      construct: "int",
+      fidelity: "partial",
+      note:
+        "Exact to 2^53, which a `number` holds. Where a declared range reaches past it the value " +
+        "travels as a string and is compared as a `bigint` — exact — but arithmetic on it in your " +
+        "own code is yours to get right, because a `bigint` would not survive `JSON.stringify`.",
+    },
+    {
+      construct: "normalize",
+      fidelity: "none",
+      note:
+        "A decoder accepts or rejects; it does not rewrite. So an unnormalised value decodes here " +
+        "where 7K would have normalised it. Normalise before sending, or compare normalised.",
+    },
+    {
+      construct: "nominal value",
+      fidelity: "partial",
+      note:
+        "Under `valueTypes brand`, which is the default, it is a distinct type TypeScript will not " +
+        "accept another string for. Under `alias` it is the type it refines, and TypeScript is " +
+        "structural — so any value of that type is accepted where this one belongs. Its rules " +
+        "travel to each use either way.",
+    },
+    {
+      construct: "invariant",
+      fidelity: "partial",
+      note:
+        "A comparison over the message's own fields becomes a check in the decoder. One reading the " +
+        "envelope, projecting over two lists at once, or using an operator this does not express is " +
+        "left to 7K's own checker, as a comment at the point it would have gone.",
+    },
+    {
+      construct: "decoder",
+      fidelity: "partial",
+      note:
+        "Generated unless `decoders` is off for a declaration — and a TypeScript type is gone at " +
+        "runtime, so where there is no decoder nothing checks a payload and a cast satisfies it.",
+    },
+    {
+      construct: "subscription",
+      fidelity: "partial",
+      note:
+        "Every handler signature is generated. It is the development host that decodes what it " +
+        "dispatches, and dispatches on the message, so a subscription whose message has no " +
+        "decoder is not reachable from it, and a second subscription to the same type cannot be " +
+        "told from the first. Both still run in production as declared.",
+    },
+    {
+      construct: "service",
+      fidelity: "partial",
+      note:
+        "An interface with one method per subscription, every constraint the model states as a " +
+        "comment, and a `TODO` for each decision the model does not make. No body: " +
+        "`03-topology.md` 2.0 describes a service's interface and never its internals.",
+    },
+  ],
   options: OPTIONS,
 
   generate(request: Request): Generated {
